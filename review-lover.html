@@ -953,6 +953,7 @@
         DO NOT start your response with phrases like "Based on" or "Here's".
         Your entire response must be valid parseable JSON.
         Always include 2-3 relevant quick reply options related to the conversation.
+        If your response is a question, provide possible answers in quick replies.
         `;
 
         // Chat messages store
@@ -1528,7 +1529,7 @@
         }
 
         // Function to send message to API
-        async function sendMessageToAPI(userMessage) {
+        async function sendMessageToAPI(userMessage, retryCount = 0) {
             try {
                 // Check if API endpoint and key are provided
                 const endpoint = apiEndpoint.value.trim();
@@ -1588,7 +1589,24 @@
                 };
 
                 // Add system instruction if provided
-                const customSystemPromptText = systemPrompt.value.trim();
+                let customSystemPromptText = systemPrompt.value.trim();
+                
+                // On retry, enhance system prompt with stronger JSON formatting requirements
+                if (retryCount > 0) {
+                    const retryPrompt = 
+`RETRY ATTEMPT #${retryCount}: YOUR PREVIOUS RESPONSE WAS NOT PROPER JSON!
+YOU MUST RESPOND WITH PROPERLY FORMATTED JSON ONLY!
+DO NOT include any text outside the JSON structure.
+DO NOT use markdown code blocks.
+VALID EXAMPLE: {"message": "Your response here", "quickReplies": ["Option 1", "Option 2", "Option 3"]}
+INVALID EXAMPLES:
+- Starting with text like "Here's the answer:"
+- Wrapping JSON in markdown code blocks with \`\`\`
+- Providing explanation outside the JSON structure
+RESPOND WITH VALID JSON ONLY!`;
+                    customSystemPromptText = retryPrompt + '\n\n' + customSystemPromptText;
+                }
+                
                 if (customSystemPromptText) {
                     requestData.systemInstruction = {
                         parts: [{ text: customSystemPromptText + '\n\n' + fixedSystemPromptAddition }]
@@ -1614,10 +1632,12 @@
                 const data = await response.json();
 
                 const assistantMessage = data.candidates[0].content.parts[0].text;
+                console.log('Assistant message:', assistantMessage);
 
                 try {
                     // Clean the response of any markdown code block formatting
                     let cleanedResponse = assistantMessage;
+                    console.log("cleanedResponse:", cleanedResponse);
                     
                     // Remove markdown code block syntax if present
                     const jsonRegex = /```(?:json)?\s*([\s\S]*?)```/;
@@ -1627,27 +1647,57 @@
                     }
                     
                     let parsedResponse;
+                    let isValidJson = false;
                     
                     try {
                         // Attempt to parse the JSON response
                         parsedResponse = JSON.parse(cleanedResponse);
+                        
+                        // Validate that it has the expected structure
+                        if (parsedResponse.message && 
+                            parsedResponse.quickReplies && 
+                            Array.isArray(parsedResponse.quickReplies) && 
+                            parsedResponse.quickReplies.length > 0) {
+                            isValidJson = true;
+                        }
+                        
+                        console.log('Parsed response:', parsedResponse);
+                        
+                        // Ensure parsedResponse has the expected properties
+                        if (!parsedResponse.message) {
+                            parsedResponse.message = "Response format error. Here's what I received: " + assistantMessage.substring(0, 100) + "...";
+                        }
+                        if (!parsedResponse.quickReplies || !Array.isArray(parsedResponse.quickReplies) || parsedResponse.quickReplies.length === 0) {
+                            parsedResponse.quickReplies = ["Tell me more", "Follow up question", "Thank you"];
+                        }
                     } catch (jsonError) {
-                        console.error('JSON parsing failed, attempting to format response:', jsonError);
+                        console.error('JSON parsing failed:', jsonError);
+                        isValidJson = false;
                         
-                        // If JSON parsing fails, try to extract content and format it as JSON
-                        let message = assistantMessage;
+                        // If JSON parsing fails and we haven't exceeded retry limit, try again
+                        if (retryCount < 2) {
+                            console.log(`Retry attempt ${retryCount + 1} for JSON formatting`);
+                            
+                            // Don't add the failed message to chat history
+                            loading.style.display = 'none';
+                            sendButton.disabled = false;
+                            
+                            // Retry with incremented counter
+                            return sendMessageToAPI(userMessage, retryCount + 1);
+                        }
                         
-                        // Remove any markdown formatting
-                        message = message.replace(/```[\s\S]*?```/g, '');
+                        // If we've exceeded retries or it's not a JSON issue, create a plain text response
+                        let message = assistantMessage.replace(/```[\s\S]*?```/g, '').trim();
                         
                         // Create a valid JSON structure from the plain text response
                         parsedResponse = {
-                            message: message.trim(),
+                            message: message,
                             quickReplies: ["Tell me more", "Follow up question", "Thank you"]
                         };
                         
-                        console.log('Created formatted response:', parsedResponse);
+                        console.log('Created formatted response after retry:', parsedResponse);
                     }
+
 
                     // Add assistant message to chat with source references if available
                     if (contextInfo.sources.length > 0) {
