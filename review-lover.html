@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Chat Interface</title>
+    <!-- Add Fuse.js library for flexible searching -->
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+    <!-- Add PDF.js for PDF parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <!-- Add Mammoth.js for DOCX parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.5.1/mammoth.browser.min.js"></script>
+    <!-- Add XLSX.js for Excel files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary-color: #4a5568;
@@ -13,6 +21,30 @@
             --dark-color: #1a202c;
             --error-color: #e53e3e;
             --success-color: #38a169;
+            --border-color: #e2e8f0;
+            --card-bg: white;
+            --text-color: #1a202c;
+            --chat-bg: white;
+            --user-msg-bg: #4299e1;
+            --user-msg-color: white;
+            --assistant-msg-bg: #e2e8f0;
+            --assistant-msg-color: #1a202c;
+        }
+
+        [data-theme="dark"] {
+            --primary-color: #718096;
+            --secondary-color: #a0aec0;
+            --accent-color: #4299e1;
+            --light-color: #2d3748;
+            --dark-color: #f7fafc;
+            --border-color: #4a5568;
+            --card-bg: #1a202c;
+            --text-color: #f7fafc;
+            --chat-bg: #2d3748;
+            --user-msg-bg: #3182ce;
+            --user-msg-color: white;
+            --assistant-msg-bg: #4a5568;
+            --assistant-msg-color: #f7fafc;
         }
 
         * {
@@ -24,31 +56,112 @@
 
         body {
             background-color: var(--light-color);
-            color: var(--dark-color);
+            color: var(--text-color);
             line-height: 1.6;
-            padding: 20px;
+            padding: 10px;
             max-width: 1200px;
             margin: 0 auto;
+            transition: all 0.3s ease;
+            overflow-x: hidden;
         }
 
         .container {
             display: flex;
             flex-direction: column;
-            height: 100vh;
+            height: calc(100vh - 20px);
+            min-height: 500px;
             max-height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .app-title {
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+        }
+
+        .app-title svg {
+            margin-right: 10px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .theme-toggle {
+            background: none;
+            border: none;
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-toggle {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
 
         .settings {
-            background-color: white;
+            background-color: var(--card-bg);
             border-radius: 8px;
             padding: 15px;
             margin-bottom: 20px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+            transition: max-height 0.4s ease-in-out, opacity 0.3s ease, margin 0.3s ease;
+            max-height: 1000px;
+            opacity: 1;
+            overflow: hidden;
+        }
+
+        .settings.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin-bottom: 0;
+            padding-top: 0;
+            padding-bottom: 0;
         }
 
         .settings h2 {
-            margin-bottom: 10px;
-            color: var(--secondary-color);
+            margin-bottom: 15px;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .settings-section {
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+
+        .settings-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
         }
 
         .form-group {
@@ -59,24 +172,50 @@
             display: block;
             margin-bottom: 5px;
             font-weight: 500;
+            color: var(--text-color);
         }
 
         .form-control {
             width: 100%;
             padding: 10px;
-            border: 1px solid #cbd5e0;
+            border: 1px solid var(--border-color);
             border-radius: 4px;
             font-size: 16px;
+            background: var(--card-bg);
+            color: var(--text-color);
+        }
+
+        .form-control:focus, .form-control-sm:focus {
+            border-color: var(--accent-color);
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
         }
 
         .chat-container {
             flex-grow: 1;
             display: flex;
             flex-direction: column;
-            background-color: white;
+            background-color: var(--chat-bg);
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
             overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .chat-header {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chat-title {
+            font-weight: 600;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .chat-history {
@@ -86,26 +225,32 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            background-color: var(--chat-bg);
         }
 
         .message {
-            max-width: 80%;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 10px;
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 4px;
+            line-height: 1.5;
+            position: relative;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+            word-break: break-word;
         }
 
         .user-message {
             align-self: flex-end;
-            background-color: var(--accent-color);
-            color: white;
+            background-color: var(--user-msg-bg);
+            color: var(--user-msg-color);
             border-radius: 18px 18px 0 18px;
         }
 
         .assistant-message {
             align-self: flex-start;
-            background-color: #e2e8f0;
-            color: var(--dark-color);
+            background-color: var(--assistant-msg-bg);
+            color: var(--assistant-msg-color);
             border-radius: 18px 18px 18px 0;
         }
 
@@ -113,20 +258,22 @@
             align-self: center;
             background-color: #fed7d7;
             color: var(--error-color);
-            padding: 10px;
+            padding: 10px 15px;
             border-radius: 8px;
             text-align: center;
             width: 90%;
+            margin: 5px 0;
         }
 
         .system-message {
             align-self: center;
-            background-color: #e2e8f0;
-            color: var(--secondary-color);
+            background-color: var(--assistant-msg-bg);
+            color: var(--text-color);
             font-size: 14px;
             padding: 8px 12px;
             border-radius: 8px;
             opacity: 0.8;
+            margin: 5px 0;
         }
 
         .quick-replies {
@@ -134,6 +281,8 @@
             flex-wrap: wrap;
             gap: 8px;
             margin-top: 8px;
+            margin-bottom: 8px;
+            padding-left: 16px;
         }
 
         .quick-reply-btn {
@@ -144,28 +293,40 @@
             border-radius: 18px;
             cursor: pointer;
             font-size: 14px;
-            transition: background-color 0.2s;
+            transition: all 0.2s;
+            border: 1px solid transparent;
         }
 
         .quick-reply-btn:hover {
             background-color: #3182ce;
+            transform: translateY(-1px);
         }
 
         .chat-input {
             display: flex;
             padding: 15px;
-            border-top: 1px solid #e2e8f0;
-            background-color: white;
+            border-top: 1px solid var(--border-color);
+            background-color: var(--card-bg);
+            transition: all 0.3s ease;
         }
 
         .chat-input textarea {
             flex-grow: 1;
-            padding: 12px;
-            border: 1px solid #cbd5e0;
-            border-radius: 4px;
+            padding: 12px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
             font-size: 16px;
             resize: none;
             height: 50px;
+            background: var(--chat-bg);
+            color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+
+        .chat-input textarea:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
         }
 
         .chat-input button {
@@ -174,24 +335,32 @@
             background-color: var(--accent-color);
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 20px;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
         }
 
         .chat-input button:hover {
             background-color: #3182ce;
+            transform: translateY(-1px);
         }
 
         .chat-input button:disabled {
             background-color: #a0aec0;
             cursor: not-allowed;
+            transform: none;
         }
 
         .loading {
             align-self: center;
             margin: 20px 0;
             display: none;
+            color: var(--text-color);
+            opacity: 0.7;
         }
 
         .loading::after {
@@ -212,6 +381,7 @@
             margin: 5px 0;
             border-radius: 4px;
             font-size: 14px;
+            transition: all 0.3s ease;
         }
 
         .status-success {
@@ -234,39 +404,504 @@
             margin-left: 20px;
             margin-top: 5px;
         }
+
+        /* RAG-related styles */
+        .rag-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .rag-section h3 {
+            margin-bottom: 15px;
+            color: var(--accent-color);
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .file-upload-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .file-upload-input {
+            position: relative;
+            flex-grow: 1;
+        }
+        
+        .file-upload-input input[type="file"] {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        
+        .file-upload-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 15px;
+            background-color: var(--light-color);
+            border: 1px dashed var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+            font-size: 14px;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s;
+        }
+        
+        .file-upload-label:hover {
+            border-color: var(--accent-color);
+            background-color: rgba(66, 153, 225, 0.05);
+        }
+        
+        .file-upload-input input[type="file"]:focus + .file-upload-label {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.2);
+        }
+        
+        .uploaded-files-list {
+            margin-top: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            background-color: var(--light-color);
+            border-radius: 4px;
+            padding: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .uploaded-files-list:empty {
+            padding: 0;
+            margin-top: 0;
+        }
+        
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background-color: var(--card-bg);
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            border-left: 3px solid var(--accent-color);
+            overflow: hidden;
+        }
+        
+        .file-name {
+            flex-grow: 1;
+            font-size: 0.9rem;
+            color: var(--text-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-right: 10px;
+        }
+        
+        .file-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .btn-remove-file {
+            background-color: var(--error-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-remove-file:hover {
+            background-color: #c53030;
+        }
+        
+        .rag-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .rag-controls .form-group {
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .form-control-sm {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+            background: var(--card-bg);
+            color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #1a202c;
+            transform: translateY(-1px);
+        }
+        
+        .rag-indicator {
+            font-size: 0.8rem;
+            margin-top: 5px;
+            margin-left: 5px;
+            color: var(--accent-color);
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 180px;
+        }
+        
+        @media (max-width: 480px) {
+            .rag-indicator {
+                max-width: 120px;
+            }
+        }
+        
+        .source-reference {
+            font-size: 0.75rem;
+            margin: 4px 0 12px;
+            padding: 6px 12px;
+            background-color: var(--light-color);
+            border-radius: 12px;
+            color: var(--text-color);
+            opacity: 0.85;
+            max-width: 85%;
+            align-self: flex-start;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .helper-text {
+            font-size: 0.8rem;
+            color: var(--secondary-color);
+            margin-top: 3px;
+            transition: all 0.3s ease;
+        }
+
+        /* Make UI responsive */
+        @media (max-width: 768px) {
+            body {
+                padding: 8px;
+            }
+            
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                margin-bottom: 10px;
+            }
+            
+            .controls {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .settings {
+                padding: 10px;
+                max-height: 80vh;
+                overflow-y: auto;
+            }
+            
+            .settings-section h2 {
+                font-size: 1.1rem;
+            }
+            
+            .rag-controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .file-upload-container {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .message {
+                max-width: 90%;
+                padding: 10px 12px;
+                font-size: 0.95rem;
+            }
+            
+            .chat-input {
+                padding: 8px;
+            }
+            
+            .chat-input textarea {
+                padding: 8px 10px;
+            }
+            
+            .app-title {
+                font-size: 1.2rem;
+            }
+            
+            .quick-replies {
+                padding-left: 0;
+                justify-content: flex-start;
+                width: 100%;
+            }
+            
+            .quick-reply-btn {
+                padding: 6px 10px;
+                font-size: 0.85rem;
+                white-space: nowrap;
+                text-overflow: ellipsis;
+                overflow: hidden;
+                max-width: 150px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .settings-toggle span {
+                display: none;
+            }
+            
+            .quick-reply-btn {
+                max-width: 120px;
+            }
+            
+            .message {
+                max-width: 95%;
+            }
+        }
+        
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .user-message, .assistant-message, .system-message, .quick-replies, .source-reference {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        /* SVG icons style */
+        .icon {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        /* File processing styles */
+        .file-processing {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            margin: 10px 0;
+            padding: 8px 12px;
+            background-color: var(--light-color);
+            border-radius: 4px;
+            color: var(--secondary-color);
+            animation: pulse 1.5s infinite;
+        }
+        
+        .file-type-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            margin-right: 5px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .file-type-pdf {
+            background-color: #e53e3e;
+        }
+        
+        .file-type-doc, .file-type-docx {
+            background-color: #3182ce;
+        }
+        
+        .file-type-xlsx, .file-type-xls, .file-type-csv {
+            background-color: #38a169;
+        }
+        
+        .file-type-txt, .file-type-md, .file-type-json {
+            background-color: #805ad5;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { opacity: 0.8; }
+        }
+        
+        .format-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 10px;
+            background-color: var(--accent-color);
+            color: white;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
     </style>
 </head>
-<body>
+<body data-theme="light">
     <div class="container">
-        <div class="settings">
-            <h2>API Configuration</h2>
-            <div class="form-group">
-                <label for="apiEndpoint">API Endpoint</label>
-                <input type="url" id="apiEndpoint" class="form-control" placeholder="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent" value="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent">
+        <header class="header">
+            <div class="app-title">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M12,2C17.52,2 22,6.48 22,12C22,17.52 17.52,22 12,22C6.48,22 2,17.52 2,12C2,6.48 6.48,2 12,2M12,4C7.58,4 4,7.58 4,12C4,16.42 7.58,20 12,20C16.42,20 20,16.42 20,12C20,7.58 16.42,4 12,4M17,11H13V7H11V11H7V13H11V17H13V13H17V11Z"></path>
+                </svg>
+                AI Chat with RAG
             </div>
-            <div class="form-group">
-                <label for="apiKey">API Key</label>
-                <input type="password" id="apiKey" class="form-control" placeholder="YOUR_GEMINI_API_KEY">
+            <div class="controls">
+                <button id="themeToggle" class="theme-toggle" title="Toggle dark mode">
+                    <svg class="icon theme-light-icon" viewBox="0 0 24 24">
+                        <path d="M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,2L14.39,5.42C13.65,5.15 12.84,5 12,5C11.16,5 10.35,5.15 9.61,5.42L12,2M3.34,7L7.5,6.65C6.9,7.16 6.36,7.78 5.94,8.5C5.5,9.24 5.25,10 5.11,10.79L3.34,7M3.36,17L5.12,13.23C5.26,14 5.53,14.78 5.95,15.5C6.37,16.24 6.91,16.86 7.5,17.37L3.36,17M20.65,7L18.88,10.79C18.74,10 18.47,9.23 18.05,8.5C17.63,7.78 17.1,7.15 16.5,6.64L20.65,7M20.64,17L16.5,17.36C17.09,16.85 17.62,16.22 18.04,15.5C18.46,14.77 18.73,14 18.87,13.21L20.64,17M12,22L9.59,18.56C10.33,18.83 11.14,19 12,19C12.82,19 13.63,18.83 14.37,18.56L12,22Z"></path>
+                    </svg>
+                    <svg class="icon theme-dark-icon" viewBox="0 0 24 24" style="display: none;">
+                        <path d="M12,18C11.11,18 10.26,17.8 9.5,17.45C11.56,16.5 13,14.42 13,12C13,9.58 11.56,7.5 9.5,6.55C10.26,6.2 11.11,6 12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18M20,8.69V4H15.31L12,0.69L8.69,4H4V8.69L0.69,12L4,15.31V20H8.69L12,23.31L15.31,20H20V15.31L23.31,12L20,8.69Z"></path>
+                    </svg>
+                </button>
+                <button id="settingsToggle" class="settings-toggle">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"></path>
+                    </svg>
+                    Settings
+                </button>
             </div>
-            <div class="form-group">
-                <label for="systemPrompt">System Prompt (Custom)</label>
-                <textarea id="systemPrompt" class="form-control" rows="2" placeholder="You are a helpful assistant...">You are a helpful assistant.</textarea>
+        </header>
+        
+        <div id="settings" class="settings">
+            <div class="settings-section">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,19H5V5H19V19M17,11H7V13H17V11M15,15H7V17H15V15M15,7H7V9H15V7Z"></path>
+                    </svg>
+                    API Configuration
+                </h2>
+                <div class="form-group">
+                    <label for="apiEndpoint">API Endpoint</label>
+                    <input type="url" id="apiEndpoint" class="form-control" placeholder="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent" value="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent">
+                </div>
+                <div class="form-group">
+                    <label for="apiKey">API Key</label>
+                    <input type="password" id="apiKey" class="form-control" placeholder="YOUR_GEMINI_API_KEY">
+                </div>
+                <div class="form-group">
+                    <label for="systemPrompt">System Prompt (Custom)</label>
+                    <textarea id="systemPrompt" class="form-control" rows="2" placeholder="You are a helpful assistant...">You are a helpful assistant.</textarea>
+                </div>
             </div>
+            
+            <!-- RAG section -->
+            <div class="settings-section">
+                <h2>
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z"></path>
+                    </svg>
+                    Knowledge Base (RAG)
+                </h2>
+                <div class="form-group">
+                    <label for="fileUpload">Upload Knowledge Base Files</label>
+                    <div class="file-upload-container">
+                        <div class="file-upload-input">
+                            <input type="file" id="fileUpload" accept=".txt,.pdf,.docx,.doc,.md,.json,.csv,.xlsx,.xls,.pptx,.ppt" multiple>
+                            <label for="fileUpload" class="file-upload-label">
+                                <svg class="icon" viewBox="0 0 24 24">
+                                    <path d="M14,13V17H10V13H7L12,8L17,13M19.35,10.03C18.67,6.59 15.64,4 12,4C9.11,4 6.6,5.64 5.35,8.03C2.34,8.36 0,10.9 0,14A6,6 0 0,0 6,20H19A5,5 0 0,0 24,15C24,12.36 21.95,10.22 19.35,10.03Z"></path>
+                                </svg>
+                                Drop files here or click to browse
+                            </label>
+                        </div>
+                        <button id="uploadButton" class="btn-secondary">
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z"></path>
+                            </svg>
+                            Upload
+                        </button>
+                    </div>
+                    <div class="helper-text">Supports: PDF, DOC, DOCX, TXT, CSV, XLS, XLSX, PPT, PPTX, MD, JSON</div>
+                </div>
+                <div id="uploadedFiles" class="uploaded-files-list"></div>
+                <div class="rag-controls">
+                    <div class="form-group">
+                        <label for="chunkSize">Chunk Size (characters)</label>
+                        <input type="number" id="chunkSize" class="form-control-sm" value="1000" min="100">
+                        <div class="helper-text">Smaller = more precise, larger = more context</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="chunkOverlap">Chunk Overlap (%)</label>
+                        <input type="number" id="chunkOverlap" class="form-control-sm" value="20" min="0" max="50">
+                        <div class="helper-text">Prevents context loss at boundaries</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="topK">Results to Include (Top-K)</label>
+                        <input type="number" id="topK" class="form-control-sm" value="3" min="1" max="10">
+                        <div class="helper-text">Number of chunks to retrieve</div>
+                    </div>
+                </div>
+            </div>
+            
             <div id="statusMessage" class="status-indicator"></div>
         </div>
 
         <div class="chat-container">
+            <div class="chat-header">
+                <div class="chat-title">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M12,3C17.5,3 22,6.58 22,11C22,15.42 17.5,19 12,19C10.76,19 9.57,18.82 8.47,18.5C5.55,21 2,21 2,21C4.33,18.67 4.7,17.1 4.75,16.5C3.05,15.07 2,13.13 2,11C2,6.58 6.5,3 12,3M17,12V10H15V12H17M13,12V10H11V12H13M9,12V10H7V12H9Z"></path>
+                    </svg>
+                    Conversation
+                    <span id="ragIndicator" class="rag-indicator" style="display: none;">RAG Enabled</span>
+                </div>
+                <div class="chat-actions">
+                    <button id="clearChat" class="btn-secondary" title="Clear chat history">
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
             <div id="chatHistory" class="chat-history">
                 <div class="system-message">Welcome! Configure your API settings and start chatting.</div>
             </div>
             <div id="loading" class="loading"></div>
             <div class="chat-input">
                 <textarea id="userInput" placeholder="Type your message here..." autofocus></textarea>
-                <button id="sendButton">Send</button>
+                <button id="sendButton">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M2,21L23,12L2,3V10L17,12L2,14V21Z"></path>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
-
     <script>
         // DOM elements
         const apiEndpoint = document.getElementById('apiEndpoint');
@@ -277,19 +912,119 @@
         const sendButton = document.getElementById('sendButton');
         const loading = document.getElementById('loading');
         const statusMessage = document.getElementById('statusMessage');
+        const settingsToggle = document.getElementById('settingsToggle');
+        const settings = document.getElementById('settings');
+        const themeToggle = document.getElementById('themeToggle');
+        const clearChat = document.getElementById('clearChat');
+        const ragIndicator = document.getElementById('ragIndicator');
+
+        // RAG DOM elements
+        const fileUpload = document.getElementById('fileUpload');
+        const uploadButton = document.getElementById('uploadButton');
+        const uploadedFiles = document.getElementById('uploadedFiles');
+        const chunkSize = document.getElementById('chunkSize');
+        const chunkOverlap = document.getElementById('chunkOverlap');
+        const topK = document.getElementById('topK');
+        const fileUploadLabel = document.querySelector('.file-upload-label');
+
+        // Knowledge base for RAG
+        const knowledgeBase = {
+            chunks: [],
+            files: []
+        };
+        
+        // Setup Fuse.js with default options
+        let fuseSearch = new Fuse([], {
+            keys: ['text'],
+            includeScore: true,
+            threshold: 0.4,
+            ignoreLocation: true
+        });
 
         // Fixed system prompt addition that forces JSON response with quick replies
         const fixedSystemPromptAddition = `
-        IMPORTANT: You must ONLY respond in valid JSON format with the following structure:
+        IMPORTANT: You must ALWAYS respond in valid JSON format with the following structure:
         {
             "message": "Your response message here",
             "quickReplies": ["Reply option 1", "Reply option 2", "Reply option 3"]
         }
+        
+        NEVER include markdown code blocks, prefixes, or any other text outside this JSON structure.
+        DO NOT start your response with phrases like "Based on" or "Here's".
+        Your entire response must be valid parseable JSON.
         Always include 2-3 relevant quick reply options related to the conversation.
         `;
 
         // Chat messages store
         const messages = [];
+
+        // Load saved theme preference
+        function loadThemePreference() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.body.setAttribute('data-theme', savedTheme);
+            updateThemeIcons(savedTheme);
+        }
+
+        // Update theme toggle icons
+        function updateThemeIcons(theme) {
+            const lightIcon = document.querySelector('.theme-light-icon');
+            const darkIcon = document.querySelector('.theme-dark-icon');
+            
+            if (theme === 'dark') {
+                lightIcon.style.display = 'none';
+                darkIcon.style.display = 'block';
+            } else {
+                lightIcon.style.display = 'block';
+                darkIcon.style.display = 'none';
+            }
+        }
+
+        // Toggle theme function
+        function toggleTheme() {
+            const currentTheme = document.body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            document.body.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcons(newTheme);
+        }
+
+        // Toggle settings panel
+        function toggleSettings() {
+            settings.classList.toggle('collapsed');
+            
+            // Update button text based on state
+            if (settings.classList.contains('collapsed')) {
+                settingsToggle.innerHTML = `
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"></path>
+                    </svg>
+                    Show Settings
+                `;
+            } else {
+                settingsToggle.innerHTML = `
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"></path>
+                    </svg>
+                    Settings
+                `;
+            }
+        }
+
+        // Clear chat history
+        function clearChatHistory() {
+            // Clear the visual chat history
+            chatHistory.innerHTML = '';
+            
+            // Add a system message
+            const systemMessage = document.createElement('div');
+            systemMessage.classList.add('system-message');
+            systemMessage.textContent = 'Chat history cleared.';
+            chatHistory.appendChild(systemMessage);
+            
+            // Clear the messages array
+            messages.length = 0;
+        }
 
         // Function to show status message
         function showStatus(message, isError = false) {
@@ -303,8 +1038,449 @@
             }, 5000);
         }
 
+        // Update RAG indicator
+        function updateRagIndicator() {
+            if (knowledgeBase.files.length > 0) {
+                ragIndicator.textContent = `RAG Enabled (${knowledgeBase.files.length} files, ${knowledgeBase.chunks.length} chunks)`;
+                ragIndicator.style.display = 'inline-block';
+            } else {
+                ragIndicator.style.display = 'none';
+            }
+        }
+
+        // Handle file drag events for custom drop area
+        function setupFileDragAndDrop() {
+            const dropArea = fileUploadLabel;
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, highlight, false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, unhighlight, false);
+            });
+            
+            function highlight() {
+                dropArea.classList.add('highlight');
+                dropArea.style.borderColor = 'var(--accent-color)';
+                dropArea.style.backgroundColor = 'rgba(66, 153, 225, 0.05)';
+            }
+            
+            function unhighlight() {
+                dropArea.classList.remove('highlight');
+                dropArea.style.borderColor = '';
+                dropArea.style.backgroundColor = '';
+            }
+            
+            dropArea.addEventListener('drop', handleDrop, false);
+            
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                
+                if (files.length > 0) {
+                    fileUpload.files = files;
+                    // Visual feedback
+                    dropArea.querySelector('.icon').style.color = 'var(--accent-color)';
+                    setTimeout(() => {
+                        dropArea.querySelector('.icon').style.color = '';
+                    }, 500);
+                }
+            }
+        }
+
+        // Function to chunk text content
+        function chunkText(text, size, overlap) {
+            const chunks = [];
+            const overlapSize = Math.floor(size * (overlap / 100));
+            const step = size - overlapSize;
+            
+            for (let i = 0; i < text.length; i += step) {
+                const chunk = text.slice(i, i + size);
+                if (chunk.length < size * 0.3 && chunks.length > 0) {
+                    // If the chunk is too small, append it to the previous chunk
+                    chunks[chunks.length - 1].text += " " + chunk;
+                } else {
+                    chunks.push({
+                        text: chunk,
+                        index: chunks.length
+                    });
+                }
+            }
+            
+            return chunks;
+        }
+        
+        // Initialize PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        
+        // File processing functions for different document types
+        
+        // Extract text from PDF
+        async function extractTextFromPDF(file) {
+            // Show processing indicator
+            showFileProcessing(file, 'pdf');
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                
+                let fullText = '';
+                
+                // Process each page
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += pageText + ' ';
+                }
+                
+                // Remove processing indicator
+                removeFileProcessing();
+                
+                return fullText;
+            } catch (error) {
+                console.error('PDF extraction error:', error);
+                removeFileProcessing();
+                throw new Error('Could not extract text from PDF: ' + error.message);
+            }
+        }
+        
+        // Extract text from DOCX using Mammoth.js
+        async function extractTextFromDOCX(file) {
+            // Show processing indicator
+            showFileProcessing(file, 'docx');
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer });
+                
+                // Remove processing indicator
+                removeFileProcessing();
+                
+                return result.value;
+            } catch (error) {
+                console.error('DOCX extraction error:', error);
+                removeFileProcessing();
+                throw new Error('Could not extract text from DOCX: ' + error.message);
+            }
+        }
+        
+        // Extract text from Excel files
+        async function extractTextFromExcel(file) {
+            // Show processing indicator
+            showFileProcessing(file, 'xlsx');
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                
+                // Combine text from all sheets
+                let fullText = '';
+                
+                workbook.SheetNames.forEach(sheetName => {
+                    const worksheet = workbook.Sheets[sheetName];
+                    const sheetText = XLSX.utils.sheet_to_txt(worksheet);
+                    fullText += `Sheet: ${sheetName}\n${sheetText}\n\n`;
+                });
+                
+                // Remove processing indicator
+                removeFileProcessing();
+                
+                return fullText;
+            } catch (error) {
+                console.error('Excel extraction error:', error);
+                removeFileProcessing();
+                throw new Error('Could not extract text from Excel: ' + error.message);
+            }
+        }
+        
+        // Extract text from CSV
+        async function extractTextFromCSV(file) {
+            try {
+                const text = await file.text();
+                return text;
+            } catch (error) {
+                console.error('CSV extraction error:', error);
+                throw new Error('Could not extract text from CSV: ' + error.message);
+            }
+        }
+        
+        // Show file processing indicator
+        function showFileProcessing(file, type) {
+            // Remove any existing processing indicator
+            removeFileProcessing();
+            
+            // Create processing indicator
+            const processingEl = document.createElement('div');
+            processingEl.id = 'fileProcessingIndicator';
+            processingEl.className = 'file-processing';
+            
+            // Set icon based on file type
+            let fileTypeClass = 'file-type-txt';
+            let fileTypeAbbr = 'TXT';
+            
+            if (type === 'pdf') {
+                fileTypeClass = 'file-type-pdf';
+                fileTypeAbbr = 'PDF';
+            } else if (type === 'docx' || type === 'doc') {
+                fileTypeClass = 'file-type-doc';
+                fileTypeAbbr = type.toUpperCase();
+            } else if (type === 'xlsx' || type === 'xls' || type === 'csv') {
+                fileTypeClass = 'file-type-xlsx';
+                fileTypeAbbr = type.toUpperCase();
+            }
+            
+            processingEl.innerHTML = `
+                <span class="file-type-icon ${fileTypeClass}">${fileTypeAbbr}</span>
+                Processing ${file.name}...
+            `;
+            
+            // Add to status area
+            uploadedFiles.insertAdjacentElement('beforebegin', processingEl);
+        }
+        
+        // Remove file processing indicator
+        function removeFileProcessing() {
+            const indicator = document.getElementById('fileProcessingIndicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+        
+        // Get file extension
+        function getFileExtension(filename) {
+            return filename.split('.').pop().toLowerCase();
+        }
+        
+        // Process a file and add to knowledge base
+        async function processFile(file) {
+            try {
+                let text = '';
+                const fileExtension = getFileExtension(file.name);
+                
+                // Process different file types
+                switch (fileExtension) {
+                    case 'pdf':
+                        text = await extractTextFromPDF(file);
+                        break;
+                    case 'docx':
+                    case 'doc':
+                        text = await extractTextFromDOCX(file);
+                        break;
+                    case 'xlsx':
+                    case 'xls':
+                        text = await extractTextFromExcel(file);
+                        break;
+                    case 'csv':
+                        text = await extractTextFromCSV(file);
+                        break;
+                    case 'txt':
+                    case 'md':
+                    case 'json':
+                    default:
+                        // For plain text files, use text() method
+                        text = await file.text();
+                        break;
+                }
+                
+                // Get chunking parameters
+                const size = parseInt(chunkSize.value);
+                const overlap = parseInt(chunkOverlap.value);
+                
+                // Create chunks
+                const fileChunks = chunkText(text, size, overlap);
+                
+                // Add file info
+                const fileId = `file-${Date.now()}-${knowledgeBase.files.length}`;
+                const fileInfo = {
+                    id: fileId,
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    extension: fileExtension,
+                    chunkIndexes: []
+                };
+                
+                // Add each chunk to the knowledge base with file reference
+                fileChunks.forEach((chunk, idx) => {
+                    const chunkId = knowledgeBase.chunks.length;
+                    knowledgeBase.chunks.push({
+                        id: chunkId,
+                        text: chunk.text,
+                        fileId: fileId,
+                        fileIndex: idx,
+                        fileName: file.name
+                    });
+                    fileInfo.chunkIndexes.push(chunkId);
+                });
+                
+                knowledgeBase.files.push(fileInfo);
+                
+                // Update Fuse search index
+                fuseSearch = new Fuse(knowledgeBase.chunks, {
+                    keys: ['text'],
+                    includeScore: true,
+                    threshold: 0.4,
+                    ignoreLocation: true
+                });
+                
+                // Add file to UI
+                addFileToUI(fileInfo);
+                
+                // Update RAG indicator
+                updateRagIndicator();
+                
+                showStatus(`Processed ${file.name}: created ${fileChunks.length} chunks`);
+                
+                return fileInfo;
+            } catch (error) {
+                showStatus(`Error processing file ${file.name}: ${error.message}`, true);
+                console.error('File processing error:', error);
+                return null;
+            }
+        }
+        
+        // Add file to UI list
+        function addFileToUI(fileInfo) {
+            const fileItem = document.createElement('div');
+            fileItem.classList.add('file-item');
+            fileItem.dataset.fileId = fileInfo.id;
+            
+            // Get file type icon and color
+            let fileTypeClass = 'file-type-txt';
+            let fileTypeAbbr = 'TXT';
+            
+            switch (fileInfo.extension) {
+                case 'pdf':
+                    fileTypeClass = 'file-type-pdf';
+                    fileTypeAbbr = 'PDF';
+                    break;
+                case 'docx':
+                case 'doc':
+                    fileTypeClass = 'file-type-doc';
+                    fileTypeAbbr = fileInfo.extension.toUpperCase();
+                    break;
+                case 'xlsx':
+                case 'xls':
+                case 'csv':
+                    fileTypeClass = 'file-type-xlsx';
+                    fileTypeAbbr = fileInfo.extension.toUpperCase();
+                    break;
+                default:
+                    fileTypeClass = 'file-type-txt';
+                    fileTypeAbbr = fileInfo.extension.toUpperCase();
+                    break;
+            }
+            
+            fileItem.innerHTML = `
+                <div class="file-name">
+                    <span class="file-type-icon ${fileTypeClass}">${fileTypeAbbr}</span>
+                    ${fileInfo.name} 
+                    <span class="format-badge">${fileInfo.chunkIndexes.length} chunks</span>
+                </div>
+                <div class="file-actions">
+                    <button class="btn-remove-file" data-file-id="${fileInfo.id}" title="Remove file">
+                        <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                            <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"></path>
+                        </svg>
+                    </button>
+                </div>
+            `;
+            
+            uploadedFiles.appendChild(fileItem);
+            
+            // Add event listener for remove button
+            fileItem.querySelector('.btn-remove-file').addEventListener('click', () => {
+                removeFile(fileInfo.id);
+            });
+        }
+        
+        // Remove file from knowledge base and UI
+        function removeFile(fileId) {
+            // Remove file from knowledge base
+            const fileIndex = knowledgeBase.files.findIndex(f => f.id === fileId);
+            if (fileIndex >= 0) {
+                const file = knowledgeBase.files[fileIndex];
+                
+                // Remove all chunks for this file
+                knowledgeBase.chunks = knowledgeBase.chunks.filter(chunk => chunk.fileId !== fileId);
+                
+                // Remove file from files array
+                knowledgeBase.files.splice(fileIndex, 1);
+                
+                // Update search index
+                fuseSearch = new Fuse(knowledgeBase.chunks, {
+                    keys: ['text'],
+                    includeScore: true,
+                    threshold: 0.4,
+                    ignoreLocation: true
+                });
+                
+                // Remove from UI
+                const fileElement = document.querySelector(`.file-item[data-file-id="${fileId}"]`);
+                if (fileElement) {
+                    fileElement.remove();
+                }
+                
+                // Update RAG indicator
+                updateRagIndicator();
+                
+                showStatus(`Removed ${file.name} from knowledge base`);
+            }
+        }
+        
+        // Retrieve relevant chunks for a query
+        function retrieveRelevantContext(query) {
+            if (knowledgeBase.chunks.length === 0) {
+                return { context: "", sources: [] };
+            }
+            
+            // Search using Fuse.js
+            const results = fuseSearch.search(query);
+            
+            // Get top-k results
+            const k = parseInt(topK.value);
+            const topResults = results.slice(0, k);
+            
+            if (topResults.length === 0) {
+                return { context: "", sources: [] };
+            }
+            
+            // Prepare context and sources
+            let context = "Here is some relevant information that might help:\n\n";
+            const sources = [];
+            
+            topResults.forEach((result, i) => {
+                const chunk = result.item;
+                context += `Excerpt ${i+1} (from ${chunk.fileName}):\n${chunk.text}\n\n`;
+                
+                // Add source if not already included
+                if (!sources.some(s => s.fileName === chunk.fileName)) {
+                    sources.push({
+                        fileName: chunk.fileName,
+                        fileId: chunk.fileId
+                    });
+                }
+            });
+            
+            return {
+                context,
+                sources
+            };
+        }
+
         // Function to add a message to the chat
-        function addMessage(content, role, quickReplies = []) {
+        function addMessage(content, role, quickReplies = [], sourceReferences = null) {
             // Create message element
             const messageElement = document.createElement('div');
             messageElement.classList.add('message');
@@ -323,6 +1499,11 @@
             
             messageElement.textContent = content;
             chatHistory.appendChild(messageElement);
+            
+            // Add source references if available
+            if (sourceReferences) {
+                chatHistory.appendChild(sourceReferences);
+            }
             
             // Add quick replies if available
             if (quickReplies && quickReplies.length > 0) {
@@ -365,6 +1546,12 @@
                 loading.style.display = 'block';
                 sendButton.disabled = true;
 
+                // Get relevant context from RAG if available
+                let contextInfo = { context: "", sources: [] };
+                if (knowledgeBase.chunks.length > 0) {
+                    contextInfo = retrieveRelevantContext(userMessage);
+                }
+                
                 // Build conversation history in Gemini's expected format
                 const apiMessages = [];
 
@@ -376,10 +1563,18 @@
                     });
                 });
 
-                // Add current user message
+                // Enhance user message with context if available
+                let enhancedUserMessage = userMessage;
+                if (contextInfo.context) {
+                    enhancedUserMessage = userMessage + "\n\n" + 
+                        "I'll provide some additional context that might be helpful:\n" +
+                        contextInfo.context;
+                }
+
+                // Add current user message (enhanced with context)
                 apiMessages.push({
                     role: "user",
-                    parts: [{ text: userMessage }]
+                    parts: [{ text: enhancedUserMessage }]
                 });
 
                 // Prepare request data with system instruction
@@ -395,7 +1590,7 @@
                 // Add system instruction if provided
                 const customSystemPromptText = systemPrompt.value.trim();
                 if (customSystemPromptText) {
-                    requestData.systemInstruction = {  // Changed from system_instruction to systemInstruction
+                    requestData.systemInstruction = {
                         parts: [{ text: customSystemPromptText + '\n\n' + fixedSystemPromptAddition }]
                     };
                 }
@@ -431,15 +1626,52 @@
                         cleanedResponse = match[1].trim();
                     }
                     
-                    // Parse the JSON response
-                    const parsedResponse = JSON.parse(cleanedResponse);
+                    let parsedResponse;
+                    
+                    try {
+                        // Attempt to parse the JSON response
+                        parsedResponse = JSON.parse(cleanedResponse);
+                    } catch (jsonError) {
+                        console.error('JSON parsing failed, attempting to format response:', jsonError);
+                        
+                        // If JSON parsing fails, try to extract content and format it as JSON
+                        let message = assistantMessage;
+                        
+                        // Remove any markdown formatting
+                        message = message.replace(/```[\s\S]*?```/g, '');
+                        
+                        // Create a valid JSON structure from the plain text response
+                        parsedResponse = {
+                            message: message.trim(),
+                            quickReplies: ["Tell me more", "Follow up question", "Thank you"]
+                        };
+                        
+                        console.log('Created formatted response:', parsedResponse);
+                    }
 
-                    // Add assistant message to chat
-                    addMessage(parsedResponse.message, 'assistant', parsedResponse.quickReplies);
+                    // Add assistant message to chat with source references if available
+                    if (contextInfo.sources.length > 0) {
+                        const sourceReferences = document.createElement('div');
+                        sourceReferences.classList.add('source-reference');
+                        
+                        // Add source icon
+                        sourceReferences.innerHTML = `
+                            <svg class="icon" viewBox="0 0 24 24">
+                                <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"></path>
+                            </svg>
+                            Sources: ${contextInfo.sources.map(s => s.fileName).join(', ')}
+                        `;
+                        
+                        // Add assistant message with sources
+                        addMessage(parsedResponse.message, 'assistant', parsedResponse.quickReplies, sourceReferences);
+                    } else {
+                        // Add normal assistant message
+                        addMessage(parsedResponse.message, 'assistant', parsedResponse.quickReplies);
+                    }
                 } catch (parseError) {
-                    // If JSON parsing fails, show the raw message
-                    addMessage("Response format error: " + assistantMessage.substring(0, 100) + '...', 'error');
-                    console.error('Failed to parse assistant response as JSON:', parseError);
+                    // If everything fails, show the raw message without error formatting
+                    console.error('Failed to process assistant response:', parseError);
+                    addMessage(assistantMessage, 'assistant');
                 }
 
                 showStatus('Message sent successfully');
@@ -486,13 +1718,53 @@
                 sendMessage();
             }
         });
+        
+        // File upload event listener
+        uploadButton.addEventListener('click', async () => {
+            const files = fileUpload.files;
+            if (files.length === 0) {
+                showStatus('Please select files to upload', true);
+                return;
+            }
+            
+            // Show upload in progress status
+            showStatus('Processing files, please wait...');
+            
+            for (const file of files) {
+                await processFile(file);
+            }
+            
+            // Clear file input
+            fileUpload.value = '';
+        });
+        
+        // Theme toggle event listener
+        themeToggle.addEventListener('click', toggleTheme);
+        
+        // Settings toggle event listener
+        settingsToggle.addEventListener('click', toggleSettings);
+        
+        // Clear chat event listener
+        clearChat.addEventListener('click', clearChatHistory);
 
-        // Initialize with a welcome message
-        addMessage("Hello! I'm ready to chat. How can I help you today?", 'assistant', [
-            "Tell me about yourself",
-            "What can you do?",
-            "Help me with a problem"
-        ]);
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load theme preference
+            loadThemePreference();
+            
+            // Setup file drag and drop
+            setupFileDragAndDrop();
+            
+            // Add welcome message
+            addMessage("Hello! I'm ready to chat. How can I help you today?", 'assistant', [
+                "Tell me about yourself",
+                "What can you do?",
+                "Help me with a problem"
+            ]);
+            
+            // Auto-focus the input field
+            userInput.focus();
+        });
     </script>
 </body>
 </html>
