@@ -12,6 +12,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.5.1/mammoth.browser.min.js"></script>
     <!-- Add XLSX.js for Excel files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Add jQuery required for PPTX processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <!-- Add JSZip for PPTX extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- Add PptxJS for PowerPoint files -->
     <script src="https://cdn.jsdelivr.net/gh/meshesha/pptxjs@1.21.1/dist/pptxjs.min.js"></script>
     <style>
@@ -1219,39 +1223,86 @@
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 
-                // Create a container element to render the PPTX (required by the library)
+                // Create a temporary container for the PPTX content
                 const container = document.createElement('div');
+                container.id = 'pptx-container-temp';
                 container.style.position = 'absolute';
                 container.style.left = '-9999px'; // Position off-screen
                 container.style.top = '-9999px';
                 document.body.appendChild(container);
                 
-                // Get a JSON representation of the PPTX content
-                const pptxContent = new PptxJS();
-                pptxContent.content(arrayBuffer);
+                // Load PPTX using the correct jQuery method
+                // Since the library depends on jQuery, we need to add it if not present
+                if (!window.jQuery) {
+                    return "PowerPoint processing requires jQuery. Please add jQuery to your page.";
+                }
                 
-                // Extract text from all slides
+                // Convert ArrayBuffer to Blob for processing
+                const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+                const fileUrl = URL.createObjectURL(blob);
+                
+                // Extract text directly from the ArrayBuffer using JSZip approach
                 let fullText = '';
-                const slides = pptxContent.slides();
                 
-                for (let i = 0; i < slides.length; i++) {
-                    fullText += `Slide ${i + 1}:\n`;
+                // Use JSZip to extract content
+                try {
+                    const zip = new JSZip();
+                    await zip.loadAsync(arrayBuffer);
                     
-                    // Extract text content from the slide
-                    const slideContent = slides[i].text || '';
-                    fullText += slideContent + '\n\n';
+                    // PowerPoint stores slide content in /ppt/slides/slide*.xml files
+                    const slideFiles = Object.keys(zip.files).filter(fileName => 
+                        fileName.startsWith('ppt/slides/slide') && fileName.endsWith('.xml')
+                    );
                     
-                    // Extract any notes
-                    if (slides[i].notes) {
-                        fullText += `Notes: ${slides[i].notes}\n\n`;
+                    // Sort slide files numerically
+                    slideFiles.sort((a, b) => {
+                        const numA = parseInt(a.match(/slide(\d+)/)[1]);
+                        const numB = parseInt(b.match(/slide(\d+)/)[1]);
+                        return numA - numB;
+                    });
+                    
+                    // Process each slide
+                    for (let i = 0; i < slideFiles.length; i++) {
+                        const slideFile = slideFiles[i];
+                        const slideContent = await zip.file(slideFile).async("string");
+                        
+                        // Extract text content using a simple regex
+                        // This is a basic approach - doesn't handle all formatting
+                        const textMatches = slideContent.match(/<a:t>([^<]+)<\/a:t>/g) || [];
+                        const slideTexts = textMatches.map(match => 
+                            match.replace(/<a:t>|<\/a:t>/g, '')
+                        );
+                        
+                        fullText += `Slide ${i + 1}:\n${slideTexts.join('\n')}\n\n`;
                     }
+                    
+                    // Also try to get any notes
+                    const noteFiles = Object.keys(zip.files).filter(fileName => 
+                        fileName.startsWith('ppt/notesSlides/notesSlide') && fileName.endsWith('.xml')
+                    );
+                    
+                    for (const noteFile of noteFiles) {
+                        const noteContent = await zip.file(noteFile).async("string");
+                        const noteMatches = noteContent.match(/<a:t>([^<]+)<\/a:t>/g) || [];
+                        const noteTexts = noteMatches.map(match => 
+                            match.replace(/<a:t>|<\/a:t>/g, '')
+                        );
+                        
+                        if (noteTexts.length > 0) {
+                            fullText += `Notes for slide ${noteFile.match(/notesSlide(\d+)/)[1]}:\n${noteTexts.join('\n')}\n\n`;
+                        }
+                    }
+                } catch (zipError) {
+                    console.error("Error extracting PPTX with JSZip:", zipError);
+                    fullText = "Could not extract text content from PowerPoint file.";
                 }
                 
                 // Clean up
+                URL.revokeObjectURL(fileUrl);
                 document.body.removeChild(container);
                 removeFileProcessing();
                 
-                return fullText;
+                return fullText || "No text content found in PowerPoint file.";
             } catch (error) {
                 console.error('PowerPoint extraction error:', error);
                 removeFileProcessing();
@@ -1704,7 +1755,7 @@
                             parsedResponse.message = "Response format error. Here's what I received: " + assistantMessage.substring(0, 100) + "...";
                         }
                         if (!parsedResponse.quickReplies || !Array.isArray(parsedResponse.quickReplies) || parsedResponse.quickReplies.length === 0) {
-                            parsedResponse.quickReplies = ["Tell me more", "Follow up question", "Thank you"];
+                            parsedResponse.quickReplies = ["Next question please", "Give me some choices", "Let's Discuss the document"];
                         }
                     } catch (jsonError) {
                         console.error('JSON parsing failed, attempting to format response:', jsonError);
@@ -1716,7 +1767,7 @@
                         // Create a valid JSON structure from the plain text response
                         parsedResponse = {
                             message: message,
-                            quickReplies: ["Tell me more", "Follow up question", "Thank you"]
+                            quickReplies: ["Next question please", "Give me some choices", "Let's Discuss the document"]
                         };
                         
                         console.log('Created formatted response:', parsedResponse);
@@ -1831,9 +1882,9 @@
             
             // Add welcome message
             addMessage("Hello! I'm ready to chat. How can I help you today?", 'assistant', [
-                "Tell me about yourself",
-                "What can you do?",
-                "Help me with a problem"
+                "Ask something from the Documents",
+                "Ask me, I'll answer.",
+                "Let's Discuss the document"
             ]);
             
             // Auto-focus the input field
