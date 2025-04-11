@@ -1529,7 +1529,7 @@
         }
 
         // Function to send message to API
-        async function sendMessageToAPI(userMessage, retryCount = 0) {
+        async function sendMessageToAPI(userMessage) {
             try {
                 // Check if API endpoint and key are provided
                 const endpoint = apiEndpoint.value.trim();
@@ -1589,24 +1589,7 @@
                 };
 
                 // Add system instruction if provided
-                let customSystemPromptText = systemPrompt.value.trim();
-                
-                // On retry, enhance system prompt with stronger JSON formatting requirements
-                if (retryCount > 0) {
-                    const retryPrompt = 
-`RETRY ATTEMPT #${retryCount}: YOUR PREVIOUS RESPONSE WAS NOT PROPER JSON!
-YOU MUST RESPOND WITH PROPERLY FORMATTED JSON ONLY!
-DO NOT include any text outside the JSON structure.
-DO NOT use markdown code blocks.
-VALID EXAMPLE: {"message": "Your response here", "quickReplies": ["Option 1", "Option 2", "Option 3"]}
-INVALID EXAMPLES:
-- Starting with text like "Here's the answer:"
-- Wrapping JSON in markdown code blocks with \`\`\`
-- Providing explanation outside the JSON structure
-RESPOND WITH VALID JSON ONLY!`;
-                    customSystemPromptText = retryPrompt + '\n\n' + customSystemPromptText;
-                }
-                
+                const customSystemPromptText = systemPrompt.value.trim();
                 if (customSystemPromptText) {
                     requestData.systemInstruction = {
                         parts: [{ text: customSystemPromptText + '\n\n' + fixedSystemPromptAddition }]
@@ -1647,20 +1630,10 @@ RESPOND WITH VALID JSON ONLY!`;
                     }
                     
                     let parsedResponse;
-                    let isValidJson = false;
                     
                     try {
                         // Attempt to parse the JSON response
                         parsedResponse = JSON.parse(cleanedResponse);
-                        
-                        // Validate that it has the expected structure
-                        if (parsedResponse.message && 
-                            parsedResponse.quickReplies && 
-                            Array.isArray(parsedResponse.quickReplies) && 
-                            parsedResponse.quickReplies.length > 0) {
-                            isValidJson = true;
-                        }
-                        
                         console.log('Parsed response:', parsedResponse);
                         
                         // Ensure parsedResponse has the expected properties
@@ -1671,22 +1644,10 @@ RESPOND WITH VALID JSON ONLY!`;
                             parsedResponse.quickReplies = ["Tell me more", "Follow up question", "Thank you"];
                         }
                     } catch (jsonError) {
-                        console.error('JSON parsing failed:', jsonError);
-                        isValidJson = false;
+                        console.error('JSON parsing failed, attempting to format response:', jsonError);
                         
-                        // If JSON parsing fails and we haven't exceeded retry limit, try again
-                        if (retryCount < 2) {
-                            console.log(`Retry attempt ${retryCount + 1} for JSON formatting`);
-                            
-                            // Don't add the failed message to chat history
-                            loading.style.display = 'none';
-                            sendButton.disabled = false;
-                            
-                            // Retry with incremented counter
-                            return sendMessageToAPI(userMessage, retryCount + 1);
-                        }
-                        
-                        // If we've exceeded retries or it's not a JSON issue, create a plain text response
+                        // If JSON parsing fails, create a properly formatted response from the plain text
+                        // Remove any markdown formatting if present
                         let message = assistantMessage.replace(/```[\s\S]*?```/g, '').trim();
                         
                         // Create a valid JSON structure from the plain text response
@@ -1695,7 +1656,7 @@ RESPOND WITH VALID JSON ONLY!`;
                             quickReplies: ["Tell me more", "Follow up question", "Thank you"]
                         };
                         
-                        console.log('Created formatted response after retry:', parsedResponse);
+                        console.log('Created formatted response:', parsedResponse);
                     }
 
 
