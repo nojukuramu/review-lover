@@ -12,6 +12,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.5.1/mammoth.browser.min.js"></script>
     <!-- Add XLSX.js for Excel files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Add PptxJS for PowerPoint files -->
+    <script src="https://cdn.jsdelivr.net/gh/meshesha/pptxjs@1.21.1/dist/pptxjs.min.js"></script>
     <style>
         :root {
             --primary-color: #4a5568;
@@ -243,7 +245,7 @@
         .user-message {
             align-self: flex-end;
             background-color: var(--user-msg-bg);
-            color: var(--user-msg-color);
+            color: var (--user-msg-color);
             border-radius: 18px 18px 0 18px;
         }
 
@@ -752,6 +754,10 @@
             background-color: #805ad5;
         }
         
+        .file-type-pptx, .file-type-ppt {
+            background-color: #dd6b20;
+        }
+        
         @keyframes pulse {
             0% { opacity: 0.8; }
             50% { opacity: 1; }
@@ -1205,6 +1211,54 @@
             }
         }
         
+        // Extract text from PowerPoint files
+        async function extractTextFromPPTX(file) {
+            // Show processing indicator
+            showFileProcessing(file, 'pptx');
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                
+                // Create a container element to render the PPTX (required by the library)
+                const container = document.createElement('div');
+                container.style.position = 'absolute';
+                container.style.left = '-9999px'; // Position off-screen
+                container.style.top = '-9999px';
+                document.body.appendChild(container);
+                
+                // Get a JSON representation of the PPTX content
+                const pptxContent = new PptxJS();
+                pptxContent.content(arrayBuffer);
+                
+                // Extract text from all slides
+                let fullText = '';
+                const slides = pptxContent.slides();
+                
+                for (let i = 0; i < slides.length; i++) {
+                    fullText += `Slide ${i + 1}:\n`;
+                    
+                    // Extract text content from the slide
+                    const slideContent = slides[i].text || '';
+                    fullText += slideContent + '\n\n';
+                    
+                    // Extract any notes
+                    if (slides[i].notes) {
+                        fullText += `Notes: ${slides[i].notes}\n\n`;
+                    }
+                }
+                
+                // Clean up
+                document.body.removeChild(container);
+                removeFileProcessing();
+                
+                return fullText;
+            } catch (error) {
+                console.error('PowerPoint extraction error:', error);
+                removeFileProcessing();
+                throw new Error('Could not extract text from PowerPoint: ' + error.message);
+            }
+        }
+        
         // Extract text from CSV
         async function extractTextFromCSV(file) {
             try {
@@ -1284,6 +1338,10 @@
                         break;
                     case 'csv':
                         text = await extractTextFromCSV(file);
+                        break;
+                    case 'pptx':
+                    case 'ppt':
+                        text = await extractTextFromPPTX(file);
                         break;
                     case 'txt':
                     case 'md':
@@ -1375,6 +1433,11 @@
                 case 'xls':
                 case 'csv':
                     fileTypeClass = 'file-type-xlsx';
+                    fileTypeAbbr = fileInfo.extension.toUpperCase();
+                    break;
+                case 'pptx':
+                case 'ppt':
+                    fileTypeClass = 'file-type-pptx';
                     fileTypeAbbr = fileInfo.extension.toUpperCase();
                     break;
                 default:
